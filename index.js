@@ -10,10 +10,24 @@ app.get("/", (req, res) => {
   return res.sendFile(path.resolve("./public/index.html"));
 });
 
+const users = {};
+
 // sockets
 io.on("connection", (socket) => {
-  socket.on("chat message", (msg) => {
-    io.emit("chat message", msg);
+  socket.on("new-user", (name) => {
+    users[socket.id] = name;
+    socket.broadcast.emit("user-joined", name);
+  });
+  socket.on("send-chat-message", (msg) => {
+    socket.broadcast.emit("chat-message", {
+      message: msg,
+      name: users[socket.id],
+    });
+  });
+
+  socket.on("disconnect", () => {
+    socket.broadcast.emit("user-disconnected", users[socket.id]);
+    delete users[socket.id];
   });
 });
 
