@@ -56,7 +56,10 @@
     </style>
   </head>
   <body>
+    <div id="onlineUsers"></div>
     <ul id="messages"></ul>
+    <div id="typing-status"></div>
+
     <form id="form" action="">
       <input id="input" autocomplete="off" /><button>Send</button>
     </form>
@@ -66,19 +69,38 @@
       const socket = io();
       const form = document.getElementById("form");
       const input = document.getElementById("input");
+      const typingStatus = document.getElementById("typing-status");
       const allMessages = document.getElementById("messages");
+      const onlineUsersConatiner = document.getElementById("onlineUsers");
 
       const name = prompt("What is your name?");
       appendChat("You joined the chat");
       socket.emit("new-user", name);
 
+      input.addEventListener("input", function () {
+        if (input.value.length > 0) socket.emit("typing");
+        // else socket.emit("not-typing");
+      });
+
       form.addEventListener("submit", function (e) {
         e.preventDefault();
+
         if (input.value) {
           appendChat(`You: ${input.value}`);
           socket.emit("send-chat-message", input.value);
+
           input.value = "";
+          socket.emit("not-typing");
         }
+      });
+
+      socket.on("online-users", function (users) {
+        onlineUsersConatiner.innerHTML = "";
+        users.forEach((user) => {
+          const userElement = document.createElement("p");
+          userElement.innerText = `${user} online 💚`;
+          onlineUsersConatiner.appendChild(userElement);
+        });
       });
 
       socket.on("user-joined", function (name) {
@@ -87,6 +109,14 @@
 
       socket.on("chat-message", function (msg) {
         if (msg) appendChat(`${msg.name}: ${msg.message}`);
+      });
+
+      socket.on("typing", function (name) {
+        typingStatus.innerText = `${name} is typing.....`;
+      });
+
+      socket.on("not-typing", function (name) {
+        typingStatus.innerText = "";
       });
 
       socket.on("user-disconnected", function (name) {

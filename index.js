@@ -11,13 +11,28 @@ app.get("/", (req, res) => {
 });
 
 const users = {};
+const typingUsers = {};
+const onlineUsers = {};
 
 // sockets
 io.on("connection", (socket) => {
   socket.on("new-user", (name) => {
     users[socket.id] = name;
+    onlineUsers[socket.id] = name;
     socket.broadcast.emit("user-joined", name);
+    io.emit("online-users", Object.values(onlineUsers));
   });
+
+  socket.on("typing", () => {
+    typingUsers[socket.id] = true;
+    io.emit("typing", users[socket.id]);
+  });
+
+  socket.on("not-typing", () => {
+    delete typingUsers[socket.id];
+    io.emit("not-typing", users[socket.id]);
+  });
+
   socket.on("send-chat-message", (msg) => {
     socket.broadcast.emit("chat-message", {
       message: msg,
@@ -27,6 +42,10 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     socket.broadcast.emit("user-disconnected", users[socket.id]);
+    delete onlineUsers[socket.id];
+    delete typingUsers[socket.id];
+    io.emit("online-users", Object.values(onlineUsers));
+    io.emit("not-typing", users[socket.id]);
     delete users[socket.id];
   });
 });
