@@ -6,50 +6,83 @@ const { Server } = require("socket.io");
 const io = new Server(server);
 const path = require("path");
 
+app.set("views", "./views");
+app.set("view engine", "ejs");
+app.use(express.urlencoded({ extended: false }));
+app.use(express.static("public"));
+
+const rooms = {};
+
 app.get("/", (req, res) => {
-  return res.sendFile(path.resolve("./public/index.html"));
+  return res.render("index", { rooms: rooms });
 });
 
-const users = {};
-const typingUsers = {};
-const onlineUsers = {};
+app.get("/:room", (req, res) => {
+  // If room doesn't exist
+  if (rooms[req.params.room] == null) return res.redirect("/");
+
+  return res.render("room", { roomName: req.params.room });
+});
+
+app.post("/room", (req, res) => {
+  if (rooms[req.body.room] != null) return res.redirect("/");
+  rooms[req.body.room] = { users: {} };
+  res.redirect(req.body.room);
+  // actual message that room was created
+  io.emit("room-created", req.body.room);
+});
+
+// const users = {};
+// const typingUsers = {};
+// const onlineUsers = {};
 
 // sockets
 io.on("connection", (socket) => {
-  socket.on("new-user", (name) => {
-    users[socket.id] = name;
-    onlineUsers[socket.id] = name;
-    socket.broadcast.emit("user-joined", name);
-    io.emit("online-users", Object.values(onlineUsers));
+  socket.on("new-user", (room, name) => {
+    socket.join(room);
+    rooms[room].users[socket.id] = name;
+    // onlineUsers[socket.id] = name;
+    socket.broadcast.to(room).emit("user-joined", name);
+    io.to(room).emit("online-users", Object.values(rooms[room].users));
+    // console.log(rooms[room].users);
   });
 
-  socket.on("typing", () => {
-    typingUsers[socket.id] = true;
-    io.emit("typing", users[socket.id]);
+  socket.on("typing", (room) => {
+    // typingUsers[socket.id] = true;
+    socket.broadcast.to(room).emit("typing", rooms[room].users[socket.id]);
   });
 
-  socket.on("not-typing", () => {
-    delete typingUsers[socket.id];
-    io.emit("not-typing", users[socket.id]);
+  socket.on("not-typing", (room) => {
+    // delete typingUsers[socket.id];
+    socket.broadcast.to(room).emit("not-typing", rooms[room].users[socket.id]);
   });
 
-  socket.on("send-chat-message", (msg) => {
-    socket.broadcast.emit("chat-message", {
+  socket.on("send-chat-message", (room, msg) => {
+    socket.broadcast.to(room).emit("chat-message", {
       message: msg,
-      name: users[socket.id],
+      name: rooms[room].users[socket.id],
     });
   });
 
   socket.on("disconnect", () => {
-    socket.broadcast.emit("user-disconnected", users[socket.id]);
-    delete onlineUsers[socket.id];
-    delete typingUsers[socket.id];
-    io.emit("online-users", Object.values(onlineUsers));
-    io.emit("not-typing", users[socket.id]);
-    delete users[socket.id];
+    getUserRooms(socket).forEach((room) => {
+      socket.broadcast
+        .to(room)
+        .emit("user-disconnected", rooms[room].users[socket.id]);
+      socket.to(room).emit("not-typing", rooms[room].users[socket.id]);
+      delete rooms[room].users[socket.id];
+      io.to(room).emit("online-users", Object.values(rooms[room].users));
+    });
   });
 });
 
-server.listen(3000, () => {
-  console.log("server is running on port no. 3000");
+function getUserRooms(socket) {
+  return Object.entries(rooms).reduce((names, [name, room]) => {
+    if (room.users[socket.id] != null) names.push(name);
+    return names;
+  }, []);
+}
+
+server.listen(8000, () => {
+  console.log("server is running on port no. 8000");
 });
